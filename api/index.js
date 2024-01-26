@@ -51,42 +51,145 @@ app.post("/register", (req, res) => {
 });
 
 // creating the user token function
-const createToken = ()=>{
-    return "my-token"
-}
+const createToken = (userId) => {
+    // Set the token payload
+    const payload = {
+        userId: userId,
+    };
+
+    // Generate the token with a secret key and expiration time
+    const token = jwt.sign(payload, "evariste", { expiresIn: "1h" });
+
+    return token;
+};
 
 // endpoint for the user login
-app.post("/login", (req, res)=>{
-    const { email, password} = req.body;
+app.post("/login", (req, res) => {
+    const { email, password } = req.body;
     // check if the email and password are provided
-    if(!email || !password){
-        return res.status(404).json({message: "Email and Password are required"});
+    if (!email || !password) {
+        return res.status(404).json({ message: "Email and Password are required" });
     }
 
     // check for that user in the backend
-    User.findOne({email})
-        .then((user)=>{
+    User.findOne({ email })
+        .then((user) => {
+
             // user not found
-            if(!user){
-                return res.status(404).json({message: "User not found"});
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
             }
 
             // compare the provided password with the password in the database
-            if(user.password !== password){
-                return res.status(404).json({message: "Invalid Password"});
+            if (user.password !== password) {
+                return res.status(404).json({ message: "Invalid Password" });
             }
 
             const token = createToken(user._id);
 
-            res.status(200).json({token});
+            res.status(200).json({ token });
 
         })
-        .catch((err)=>{
+        .catch((err) => {
             console.log("Error in finding the user", err);
-            res.status(500).json({ message: "Internal server error", err})
+            res.status(500).json({ message: "Internal server error", err })
         });
-
 });
+
+// endpoint to fetch all users but the current user
+app.get("/users/:userId", (req, res) => {
+    const loggedInUserId = req.params.userId;
+
+    User.find({ _id: { $ne: loggedInUserId } })
+        .then((users) => {
+            res.status(200).json(users);
+        })
+        .catch((err) => {
+            console.log("Error fetching users", err);
+            res.status(500).json({ message: "Error fetching users" })
+        });
+});
+
+// endpoint to send a request to a user
+app.post("/friend-request", async (req, res) => {
+    const { currentUserId, selectedUserId } = req.body;
+
+    try {
+        // updated the recipient's receivedFriendRequests array
+        await User.findByIdAndUpdate(
+            selectedUserId,
+            {
+                $push: { receivedFriendRequests: currentUserId },
+            }
+        );
+
+        // update the sender's sentFriendRequests array
+        await User.findByIdAndUpdate(
+            currentUserId,
+            {
+                $push: { sentFriendRequests: selectedUserId },
+            }
+        );
+
+        res.status(200);
+    } catch (error) {
+        res.sendStatus(500);
+    }
+});
+
+
+// endpoint to show all the friend requests of particular user
+app.get("/friend-request/:userId", async (req, res) => {
+    const { userId } = req.params;
+    try {
+        // fetch the user document based on the User id
+        const user = await User.findById(userId).populate("receivedFriendRequests", "name email image").lean()
+        const friendRequests = user.receivedFriendRequests;
+        res.status(200).json(friendRequests)
+    } catch (error) {
+        console.log("Error retrieving user's friend requests");
+        res.status(500).json({ message: "Internal Server Error" })
+    }
+});
+
+// endpoint to accept a friend request
+app.post("/friend-request/accept", async (req, res) => {
+    const { senderId, recipientId } = req.body;
+
+    try {
+        // retrieve the documents of sender and recipient
+        const sender = await User.findById(senderId);
+        const recipient = await User.findById(recipientId);
+        sender.friends.push(recipientId);
+        recipient.friends.push(senderId);
+
+        recipient.receivedFriendRequests = recipient.receivedFriendRequests.filter((request) => request.toString() !== senderId.toString());
+
+        sender.sentFriendRequests = recipient.sentFriendRequests.filter((request) => request.toString() !== recipientId.toString());
+
+        await sender.save();
+        await recipient.save();
+        res.status(200).json({ message: "Friend request accepted sucessfully." })
+
+    } catch (error) {
+        console.log("Error accepting friend request", error);
+        res.status(500).json({message: "Error accepting friend request."})
+    }
+});
+
+// endpoint to access all the logged in users
+app.get("/accepted-friends/:userId", async (req, res)=>{
+    try {
+        const {userId} = req.params;
+        const user = await User.findById(userId).populate("friends", "name email image");
+        const acceptedFriends = user.friends;
+        res.status(200).json(acceptedFriends);
+
+    } catch (error) {
+        console.log("Error retrieving logged in friends");
+        res.status(500).json({ message: "Error retrieving logged in friends"})
+    }
+})
 
 
 

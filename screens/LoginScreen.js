@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+
 const LoginScreen = () => {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -15,7 +16,6 @@ const LoginScreen = () => {
         }
         axios.post("http://10.0.2.2:8000/login", user)
             .then((response)=>{
-                console.log(response);
                 const token = response.data.token;
                 AsyncStorage.setItem("authToken", token);
                 navigation.replace("Home");
@@ -33,7 +33,6 @@ const LoginScreen = () => {
         const checkLoginStatus = async ()=>{
             try {
                 const token = await AsyncStorage.getItem("authToken");
-                console.log("token", token);
                 if (token){
                     navigation.navigate("Home")
                 }
