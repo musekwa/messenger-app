@@ -5,8 +5,11 @@ const passport = require("passport");
 const localStrategy = require("passport-local").Strategy;
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+
 const User = require("./models/user");
 const Message = require("./models/message");
+
 
 
 const app = express();
@@ -173,21 +176,86 @@ app.post("/friend-request/accept", async (req, res) => {
 
     } catch (error) {
         console.log("Error accepting friend request", error);
-        res.status(500).json({message: "Error accepting friend request."})
+        res.status(500).json({ message: "Error accepting friend request." })
     }
 });
 
 // endpoint to access all the logged in users
-app.get("/accepted-friends/:userId", async (req, res)=>{
+app.get("/accepted-friends/:userId", async (req, res) => {
     try {
-        const {userId} = req.params;
+        const { userId } = req.params;
         const user = await User.findById(userId).populate("friends", "name email image");
         const acceptedFriends = user.friends;
         res.status(200).json(acceptedFriends);
 
     } catch (error) {
         console.log("Error retrieving logged in friends");
-        res.status(500).json({ message: "Error retrieving logged in friends"})
+        res.status(500).json({ message: "Error retrieving logged in friends" })
+    }
+});
+
+// Configure multer for handling file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, "files/"); // Specify the desired destination folder
+    },
+    filename: function (req, file, cb) {
+      // Generate a unique filename for the uploaded file
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      cb(null, uniqueSuffix + "-" + file.originalname);
+    },
+  });
+
+const upload = multer({
+    storage: storage
+})
+// endpoint to post and stores messages
+app.post("/messages", upload.single('imageFile'), async (req, res) => {
+    try {
+        const { senderId, recipientId, messageType, message } = req.body;
+        const newMessage = new Message({
+            senderId,
+            recipientId,
+            messageType,
+            message,
+            timeStamp: new Date(),
+            imageUrl: messageType === "image"
+        });
+        await newMessage.save();
+    res.status(200).json({ message: "Message sent successfully."});
+    } catch (error) {
+        console.log("Error posting a message", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
+// endpoint to get the userDetails to design the chat room header
+app.get("/user/:userId", async (req, res)=>{
+    try {
+        const {userId} = req.params;
+        // fetch the user data
+        const recipientId = await User.findById(userId);
+        res.status(200).json(recipientId);
+    } catch (error) {
+        console.log("Error fetching user details", error);
+        res.status(500).json({ message: "Internal Server Error"});
+    }
+});
+
+// endpoint to fetch the messages between two users in the chat room
+app.get("/messages/:senderId/:recipientId", async (req, res)=>{
+    try {
+        const {senderId, recipientId} = req.params;
+        const messages = await Message.find({
+            $or: [
+                {senderId:senderId, recipientId:recipientId},
+                {senderId:recipientId, recipientId:senderId}
+            ]
+        }).populate("senderId", "_id name");
+        res.status(200).json(messages);
+    } catch (error) {
+        console.log("Error fetching messages between 2 users", error);
+        res.status(500).json({ message: "Internal Server Error"});
     }
 })
 
